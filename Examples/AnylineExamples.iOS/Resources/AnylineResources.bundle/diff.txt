@@ -1,0 +1,350 @@
+diff --git a/module_anyline_ocr/trained_models/VIN.any b/module_anyline_ocr/trained_models/VIN.any
+index 4db9ca9..d9bee2f 100644
+Binary files a/module_anyline_ocr/trained_models/VIN.any and b/module_anyline_ocr/trained_models/VIN.any differ
+diff --git a/module_anyline_ocr/vin.alc b/module_anyline_ocr/vin.alc
+index 835a9d7..9fb2a35 100644
+--- a/module_anyline_ocr/vin.alc
++++ b/module_anyline_ocr/vin.alc
+@@ -6,12 +6,16 @@
+ //  - instead of resizing with padding, replace image sizes with resize factor in TF network params
+ header {
+ 	// GRAPH NAMES:
++	// Split up to increase scan performance because of a bug in the core, where the classification 
++	// takes much longer when both models are combined into one (bug ticket RND-524)
+ 	//
+-	// detection
+-	// classification
+-    set $TFParams="{"detection":{"input":{"nodeName":"input_detection/input_node"},"output":{"nodeName":"output_detection/output_node","type":"image","resizeFactorHeight":1,"resizeFactorWidth":1}},"classification":{"input":{"nodeName":"input_classification/input_node","imageHeight":40,"imageWidth":40},"output":{"nodeName":"output_classification/output_node","type":"classification"},"whiteListNodeName":"input_classification/whiteList_node","whiteList":{"0":{"neuronIndex":0, "whiteList":1},"1":{"neuronIndex":1, "whiteList":1},"2":{"neuronIndex":2, "whiteList":1},"3":{"neuronIndex":3, "whiteList":1},"4":{"neuronIndex":4, "whiteList":1},"5":{"neuronIndex":5, "whiteList":1},"6":{"neuronIndex":6, "whiteList":1},"7":{"neuronIndex":7, "whiteList":1},"8":{"neuronIndex":8, "whiteList":1},"9":{"neuronIndex":9, "whiteList":1},"A":{"neuronIndex":10, "whiteList":1},"B":{"neuronIndex":11, "whiteList":1},"C":{"neuronIndex":12, "whiteList":1},"D":{"neuronIndex":13, "whiteList":1},"E":{"neuronIndex":14, "whiteList":1},"F":{"neuronIndex":15, "whiteList":1},"G":{"neuronIndex":16, "whiteList":1},"H":{"neuronIndex":17, "whiteList":1},"I":{"neuronIndex":18, "whiteList":1},"J":{"neuronIndex":19, "whiteList":1},"K":{"neuronIndex":20, "whiteList":1},"L":{"neuronIndex":21, "whiteList":1},"M":{"neuronIndex":22, "whiteList":1},"N":{"neuronIndex":23, "whiteList":1},"O":{"neuronIndex":24, "whiteList":1},"P":{"neuronIndex":25, "whiteList":1},"Q":{"neuronIndex":26, "whiteList":1},"R":{"neuronIndex":27, "whiteList":1},"S":{"neuronIndex":28, "whiteList":1},"T":{"neuronIndex":29, "whiteList":1},"U":{"neuronIndex":30, "whiteList":1},"V":{"neuronIndex":31, "whiteList":1},"W":{"neuronIndex":32, "whiteList":1},"X":{"neuronIndex":33, "whiteList":1},"Y":{"neuronIndex":34, "whiteList":1},"Z":{"neuronIndex":35, "whiteList":1}}}}";
+-	
+-	$tf = InitTensorflow(trainFileString:"VIN.any", networkParams:$TFParams, isEncrypted:1);
++	// classification model
++    set $TFParams="{"classification":{"input":{"nodeName":"input_classification/input_node","imageHeight":40,"imageWidth":40},"output":{"nodeName":"output_classification/output_node","type":"classification"},"whiteListNodeName":"input_classification/whiteList_node","whiteList":{"0":{"neuronIndex":0, "whiteList":1},"1":{"neuronIndex":1, "whiteList":1},"2":{"neuronIndex":2, "whiteList":1},"3":{"neuronIndex":3, "whiteList":1},"4":{"neuronIndex":4, "whiteList":1},"5":{"neuronIndex":5, "whiteList":1},"6":{"neuronIndex":6, "whiteList":1},"7":{"neuronIndex":7, "whiteList":1},"8":{"neuronIndex":8, "whiteList":1},"9":{"neuronIndex":9, "whiteList":1},"A":{"neuronIndex":10, "whiteList":1},"B":{"neuronIndex":11, "whiteList":1},"C":{"neuronIndex":12, "whiteList":1},"D":{"neuronIndex":13, "whiteList":1},"E":{"neuronIndex":14, "whiteList":1},"F":{"neuronIndex":15, "whiteList":1},"G":{"neuronIndex":16, "whiteList":1},"H":{"neuronIndex":17, "whiteList":1},"J":{"neuronIndex":18, "whiteList":1},"K":{"neuronIndex":19, "whiteList":1},"L":{"neuronIndex":20, "whiteList":1},"M":{"neuronIndex":21, "whiteList":1},"N":{"neuronIndex":22, "whiteList":1},"P":{"neuronIndex":23, "whiteList":1},"R":{"neuronIndex":24, "whiteList":1},"S":{"neuronIndex":25, "whiteList":1},"T":{"neuronIndex":26, "whiteList":1},"U":{"neuronIndex":27, "whiteList":1},"V":{"neuronIndex":28, "whiteList":1},"W":{"neuronIndex":29, "whiteList":1},"X":{"neuronIndex":30, "whiteList":1},"Y":{"neuronIndex":31, "whiteList":1},"Z":{"neuronIndex":32, "whiteList":1}}}}";
++	$tfClassNew = InitTensorflow(trainFileString:"VIN.any", networkParams:$TFParams, isEncrypted:1);
++
++	// detection model
++    set $TFParams="{"detection":{"input":{"nodeName":"input_detection/input_node"},"output":{"nodeName":"output_detection/output_node","type":"image","resizeFactorHeight":1,"resizeFactorWidth":1}}}}";
++	$tfDet = InitTensorflow(trainFileString:"VIN.any", networkParams:$TFParams, isEncrypted:1);
+ 
+ 	$drawColor = InitColor(hexString:"FF0000");
+ 
+@@ -23,8 +27,7 @@ header {
+ 	set $minContours = 17;
+ 	set $numDigits = 0;
+ 
+-	set $validationRegexString = "^[A-Z0-9]{17}$"; 
+-	set $charWhitelist = "012346789ABCDEFGHIJKLMNOPQRSTUVWXYZ";
++	$validStreamlinedRegex = InitRegex(regexString:"^[A-Z0-9]{17}$");
+ 
+ 	$resultStack = InitResultStack (size:12, minEqualResults:3, allowConsecutivelySameValue:1);
+ 
+@@ -33,25 +36,31 @@ header {
+ 	set $isTest = 0; // set to 1 for LISA tests
+ 	set $isDebug = 0; //1 for showing debug images
+ 	set $iOS = 0; // currently, the cutout alignment in the ios recorder app is center (top for android) --> need to adjust crop rect
++	set $isCrop = 1; // there are lisa sets where the images are already cropped, for them set isCrop to 0
+ 	$red = InitColor (hexString:"FF0000");
+ 
+ }
+ 
+ // Crop for lisa tests
+ if ($isTest == 1) {
+-    $image = Resize(image:$image, width:720);
+-
+-    if ($iOS == 1) {
+-        $height = GetImageSize(image: $image, type: "HEIGHT");
+-        $yCenter = Divide($height, 2);
+-        $yInt = Round($yCenter);
+-	    $yCutout = Subtract($yInt, 47);
+-	    report $yCutout;
+-        $cropRect = InitRect(x:20, y:$yCutout, width:648, height:94);	// Cutout used in vehicle id mode in ios recorder app (center)
+-    } else {
+-        $cropRect = InitRect(x:20, y:395, width:648, height:94);	// Cutout used in vehicle id mode in android recorder app (top + offset 395)
+-    }
+-	$image = Crop(image:$image, rect:$cropRect);
++	if ($isCrop == 1) {
++		$image = Resize(image:$image, width:720);
++
++		if ($iOS == 1) {
++			$height = GetImageSize(image: $image, type: "HEIGHT");
++			$yCenter = Divide($height, 2);
++			$yInt = Round($yCenter);
++			$yCutout = Subtract($yInt, 47);
++			report $yCutout;
++			$cropRect = InitRect(x:20, y:$yCutout, width:648, height:94);	// Cutout used in vehicle id mode in ios recorder app (center)
++		} else {
++			$cropRect = InitRect(x:20, y:395, width:648, height:94);	// Cutout used in vehicle id mode in android recorder app (top + offset 395)
++
++			// $cropRect = InitRect(x:20, y:275, width:648, height:164);	// Myschaden24
++			// $cropRect = InitRect(x:20, y:155, width:648, height:94);	// AnylineTest
++		}
++		$image = Crop(image:$image, rect:$cropRect);
++	}
+ }
+ 
+ $brightness = MeanBrightnessInRect (image:$image, widthPercent:0.2, heightPercent:0.2, offsetPercent:0.0);
+@@ -74,7 +83,7 @@ report $gImage;
+ // DIGIT DETECTION
+ //
+ // -----------------------------------------
+-$tfImage = Tensorflow (tensorflow:$tf, image:$gImage, graphName:"detection");
++$tfImage = Tensorflow (tensorflow:$tfDet, image:$gImage, graphName:"detection");
+ 
+ $openedImage = Open(image:$tfImage, height:5, width:1, kernelType:"RECT");
+ //$openedImage = Open(image:$tfImage, height:6, width:1, kernelType:"RECT");
+@@ -82,19 +91,64 @@ $openedImage = Open(image:$openedImage, height:1, width:3, kernelType:"RECT");
+ 
+ $thresholdedImage = Threshold (image:$openedImage, threshold:160, type:"BINARY");
+ 
+-$contours = FindContours (image:$thresholdedImage, minHeight:12);
+-report $contours;
++$contours = FindContours (image:$thresholdedImage, minHeight:12, minRatio: 0.1, maxRatio: 1.1, minBoundingRectContourAreaRatio: 0.5);
++
+ if ($isDebug == 1) {
+     show $gImage;
+     show $tfImage;
+     show $openedImage;
+ 	show $thresholdedImage;
++}
++
++if ($isDebug == 1) {
++	$contoursImage1 = DrawBoundingRects (image:$gImage, contours:$contours, color:$red, lineThickness:2);
++	show $contoursImage1;
++}
++
++// do a second run of countour finding to exclude big contours that could be logos
++// (this showed to work better than ResolveContourBoundingRects)
++
++$medianHeight = MedianContourSize(contours:$contours, type:"HEIGHT");
++$maxHeight = Multiply($medianHeight, 1.5);
++
++$contours = FindContours (image:$thresholdedImage, minHeight:12, maxHeight:$maxHeight, minRatio: 0.1, maxRatio: 1.1, minBoundingRectContourAreaRatio: 0.5);
++
++if ($isDebug == 1) {
+ 	$contoursImage = DrawBoundingRects (image:$gImage, contours:$contours, color:$red, lineThickness:2);
+ 	show $contoursImage;
+ }
+ 
++report $contours;
++
+ $sortedContours = SortContours (contours:$contours, sortAttribute:"X");
+ 
++// TODO: Revoved for now since ClusterContours not on develop yet
++// // New contour clustering
++
++// $medianWidth = MedianContourSize(contours:$sortedContours, type:"WIDTH");
++// $xEps = Multiply ($medianWidth, 10);
++// $xEps = Round ($xEps);
++
++// $medianHeight = MedianContourSize(contours:$sortedContours, type:"HEIGHT");
++// $yEps = Multiply ($medianHeight, 0.3);
++// $yEps = Round ($yEps);
++
++// show $medianWidth;
++// show $medianHeight;
++
++// $eps = InitPoint(x:$xEps, y:$yEps);
++// $clusters = ClusterContours(contours:$sortedContours, eps:$eps);
++// $keys = GetVectorOfMapKeys(map:$clusters);
++// $keySize = GetVectorSize(vector:$keys);
++
++// show $keySize;
++
++// $key = GetVectorItemAtIndex(vector:$keys, index:0);
++// $contours = GetMapItemAtIdentifier(map:$clusters, identifier:$key);
++
++// $sortedContours = SortContours (contours:$contours, sortAttribute:"X");
++
++// TODO: REMOVED THIS SINCE ResolveContours IS FAULTY
+ // for now, assume that at least all necessary 17 characters have to be found by the detection
+ $contourCount = ContourCount (contours:$sortedContours);
+ if ($contourCount > 17) {
+@@ -104,11 +158,77 @@ if ($contourCount > 17) {
+     $sortedContours = ResolveContours(contours:$sortedContours, minDigits:$minContours, removeExcessiveContours:"DISTANCES",medianYTolerance:$yTolerance, maxDigits:17, maxXDistance:15, strict:0, resolveInteriorGaps:1)
+ }
+ 
+-if ($isTest == 1) {
+-	$contImage = DrawBoundingRects (image:$thresholdedImage, contours:$sortedContours, color:$drawColor, lineThickness:1);
++if ($isDebug == 1) {
++	$contImage = DrawBoundingRects (image:$gImage, contours:$sortedContours, color:$drawColor, lineThickness:1);
+ 	show $contImage;
+ }
+ 
++// -----------------------------------------
++//
++// SELECT FULL AND HALF DIGITS CENTER POINTS
++//
++// -----------------------------------------
++// works better than computing the centers of contours
++$digitMedianHeight = GetMedianContourHeightEnergy(contours:$sortedContours);
++$selectedPoints = SelectPointsEnergy(contours:$sortedContours, digitMedianHeight:$digitMedianHeight);
++
++// -----------------------------------------
++//
++// FIT LINE THROUGH CENTER POINTS
++//
++// -----------------------------------------
++$fittedLine = FitLine(points:$selectedPoints, distType:"WELSCH");
++
++// -----------------------------------------
++//
++// EXTRACT HOUGH LINES FROM Y-GRADIENT IMAGE
++//
++// -----------------------------------------
++$blurredImage = GaussianBlur(image:$gImage, kernelWidth:3, kernelHeight:3, sigmaX:0.25);
++
++$yGradientImage = EdgeDetection(image:$blurredImage, type:"SOBEL", kernelSize:7, useXGradient:0);
++
++$mask = CreateMaskFilled(image:$yGradientImage, contours:$sortedContours);
++$invMask = Invert(image:$mask);
++
++$maskedGradientImage = SetColorWithMask(image:$yGradientImage, mask:$invMask);
++
++$thresholdedGradientImage = Threshold(image:$maskedGradientImage, threshold:100, maxValue:255, type:"BINARY");
++
++$houghLines = FindHoughLines(image:$thresholdedGradientImage, threshold:50, minLineLength:150, maxLineGap:30);
++
++
++// -----------------------------------------
++//
++// CORRECT FITTED LINE THROUGH EXTRACTED
++// HORIZONTAL LINES
++//
++// -----------------------------------------
++$correctedLine = CorrectLine(fittedLine:$fittedLine, houghLines:$houghLines, points:$selectedPoints);
++
++// -----------------------------------------
++//
++// Check center points
++//
++// -----------------------------------------
++
++// If there are less than 17 points, fill missing points
++$pointCount = GetVectorSize($selectedPoints);
++if ($pointCount < 17) {
++	$selectedPoints = FillMissingPoints(points:$selectedPoints, fittedLine:$correctedLine, minDifference:5.0, maxMissingPoints:3, thresholdFactor:0.5);
++}
++
++// If there are not exactly 17 points, abort 
++$pointCount = GetVectorSize($selectedPoints);
++if($pointCount != 17) {
++    $dummy = AbortWithRunFailure (code: 5001, message: "Found less characters than needed for a VIN.");
++}
++
++if ($isDebug == 1) {
++	$pointsImage = DrawPoints (image:$gImage, points:$selectedPoints, size:3);
++	show $pointsImage;
++}
++
+ // report individual contours for visual feedback
+ report $sortedContours;
+ 
+@@ -119,13 +239,6 @@ reportImageForLog $image;
+ $textRect = RectFromContours(contours:$sortedContours, attribute:"UNION");
+ report $textRect;
+ 
+-$contourCount = ContourCount (contours:$sortedContours);
+-
+-if($contourCount < $minContours) {
+-    $dummy = AbortWithRunFailure (code: 5001, message: "Found less contours than needed for serial numbers.");
+-}
+-
+-
+ // -----------------------------------------
+ //
+ // FIT LINE THROUGH CENTER POINTS
+@@ -141,6 +254,12 @@ if($angle > $maxAngle1) {
+ 	}
+ }
+ 
++$selectedPoints = ProjectPointsOnLine (points:$selectedPoints, line:$fittedLine);
++
++if ($isDebug == 1) {
++	$pointsFittedToLineImage = DrawPoints (image:$gImage, points:$selectedPoints, size:3);
++	show $pointsFittedToLineImage;
++}
+ 
+ // -----------------------------------------
+ //
+@@ -155,14 +274,15 @@ $contourHeight = MedianContourSize(contours:$sortedContours, type:"HEIGHT");
+ // CUT OUT IMAGES
+ //
+ // -----------------------------------------
+-$cHeight = Add ($contourHeight, 3.0);
+ 
+-$resizeRatio = Divide (28.0, $cHeight);
++$resizeRatio = Divide (28.0, $contourHeight);
+ 
+-$centerPoints = ComputeCentersOfContours(contours:$sortedContours);
+-
+-$cutOutImages = CutOutImages(image:$gImage, centerPoints:$centerPoints, height:40, width:40, resizeRatio:$resizeRatio, paddingType:"REPLICATE");
++$cutOutImages = CutOutImages(image:$gImage, centerPoints:$selectedPoints, height:40, width:40, resizeRatio:$resizeRatio, paddingType:"REPLICATE");
+ 
++if ($isDebug == 1) {
++	$combinedImages = DrawImages(images:$cutOutImages);
++	show $combinedImages;
++}
+ 
+ // -----------------------------------------
+ //
+@@ -171,11 +291,14 @@ $cutOutImages = CutOutImages(image:$gImage, centerPoints:$centerPoints, height:4
+ // -----------------------------------------
+ $normalizedImages = GlobalContrastNormalize (images:$cutOutImages);
+ 
+-$intermediate_result = Tensorflow (tensorflow:$tf, images:$normalizedImages, graphName:"classification", confidence:1);
+-show $intermediate_result;
++// do first classification with general model
++$intermediate_result = Tensorflow (tensorflow:$tfClassNew, images:$normalizedImages, graphName:"classification", confidence:1);
+ $confidence = ConfidenceForResult(result:$intermediate_result, identifier:"result");
+-show $confidence;
+ 
++if ($isDebug == 1) {
++	show $intermediate_result;
++	show $confidence;
++}
+ 
+ // -----------------------------------------
+ //
+@@ -184,7 +307,17 @@ show $confidence;
+ // -----------------------------------------
+ // get result string from tf result as in energy mode
+ $intermediate_result = Streamline(result:$intermediate_result, usecase:"eScan", numberOfDigits:$numDigits);
+-show $intermediate_result;
++if ($isDebug == 1) {
++	show $intermediate_result;
++}
++
++// Check if it's a Renault VIN starting with VF1, and if so clean last 8 characters to only digits
++$vinType = ResultSubstring(result:$intermediate_result, identifier: "$result", start: 0, length: 3);
++$isVinRenaultVF1 = CompareString(left: $vinType, right: "VF1");
++if ($isVinRenaultVF1 == 0) {
++	$chnPattern = InitPattern(patternString: "9|[A-Z0-9];8|[0-9]");
++	$intermediate_result = ResultApplyPerCharacterWhitelist(result:$intermediate_result, identifier:"$result", pattern:$chnPattern, ignoreInvalidSymbols:1);
++}
+ 
+ $subResult = ResultSubstring(result:$intermediate_result, identifier: "$result");
+ 
+@@ -192,14 +325,18 @@ $subResult = ResultSubstring(result:$intermediate_result, identifier: "$result")
+ $result = NewResult();
+ $result = AddSubResult(result:$result, identifier: "text", value: $subResult, overwrite:1);
+ 
+-$validationRegex = InitRegex(regexString:$validationRegexString);
+-$result = ValidateResult(result:$result, identifier:"text", regex:$validationRegex);
++$result = ValidateResult(result:$result, identifier:"text", regex:$validStreamlinedRegex);
+ 
+ if ($isTest == 0) {
+ 	$resultCount = AddResultToStack (resultStack:$resultStack, result:$result);
+ 	$result = GetResultFromStack (resultStack:$resultStack);
+ }
+ 
++// in order to make the result and the input image better comparable in the Anyline Studio
++if ($isDebug == 1) {
++	show $gImage;
++}
++
+ // used for Azure reporting
+ report $result;
+ return $result;
+\ No newline at end of file
+diff --git a/module_license_plate/trained_models/LPT.any b/module_license_plate/trained_models/LPT.any
+index ef36314..79b8a22 100644
+Binary files a/module_license_plate/trained_models/LPT.any and b/module_license_plate/trained_models/LPT.any differ
